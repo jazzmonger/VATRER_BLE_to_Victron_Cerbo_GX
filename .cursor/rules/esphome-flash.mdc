@@ -1,0 +1,19 @@
+---
+description: USB flash workflow for this Cerbo BLE bridge YAML
+globs: "**/*.{yaml,yml}"
+alwaysApply: false
+---
+
+# Cerbo bridge — flash this repo
+
+```bash
+./scripts/esphome-flash.sh upload          # USB
+./scripts/esphome-flash.sh upload-ota      # Wi-Fi (needs api + esp32_ip in secrets.yaml)
+./scripts/esphome-flash.sh logs-ota        # wireless logs (api)
+```
+
+Set `esp32_ip: "192.168.x.x"` in `secrets.yaml` or `ESPHOME_OTA_HOST=...` for OTA commands.
+
+Cerbo MQTT bridge YAML: no HA (`mqtt.discovery: false`); JSON on `/vatrer/battery` for **mr-manuel dbus-mqtt-battery** (see header in `vatrer-cerbo-ble.yaml`).
+
+ESPHome binary policy: see **esphome-use-existing** rule (no per-project installs).

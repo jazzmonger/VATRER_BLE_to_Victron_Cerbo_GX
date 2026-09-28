@@ -1,0 +1,43 @@
+---
+description: Use Jeff's existing ESPHome install; never reinstall per project
+alwaysApply: true
+---
+
+# ESPHome — use existing install only
+
+## Do not install ESPHome for new projects
+
+- **Never** run `brew install esphome`, `pip install esphome`, or create a project `.venv` **unless the user explicitly asks** to install or upgrade ESPHome.
+- **Never** retry failed installs in a loop. If `esphome` is missing or broken, tell the user and ask where their install lives.
+
+## Which binary to use (in order)
+
+1. **`ESPHOME_BIN`** if set and executable (user override for any project).
+2. **`~/ESPHome_Projects/esphome-global/.venv/bin/esphome`** — global install (**ESPHome 2026.9.0**, Python 3.12). Upgrade only when the user asks: `.../esphome-global/.venv/bin/pip install 'esphome==X.Y.Z'`.
+3. **`esphome` on `PATH`** (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`).
+4. Legacy fallback: Furrion Chill Cube venv (old 2025.5.2 / Python 3.9 — too old for current JBD component).
+4. Do **not** use `~/Library/Python/3.8/bin/esphome` (broken `ModuleNotFoundError`). Do **not** use old venvs under `CST_*` / `Traeger-Controller` (shebang points at missing `/Volumes/1TB Drive/...` or `/Users/jeff/...`).
+
+Verify once: `"$ESPHOME_BIN" version`
+
+## Flash / compile commands
+
+Use the project helper (sets build dir outside paths with spaces):
+
+```bash
+./scripts/esphome-flash.sh config|compile|upload|run|logs
+ESPHOME_DEVICE=/dev/cu.usbmodem101 ./scripts/esphome-flash.sh upload
+```
+
+Optional env (same for every ESPHome project on this machine):
+
+```bash
+export ESPHOME_BUILD_PATH="$HOME/ESPHome_Projects/esphome-build"
+export PLATFORMIO_BUILD_CACHE_DIR="$HOME/.cache/platformio-esphome"
+```
+
+## External components
+
+Pull JBD (and other) components via `external_components` in YAML or a **local git clone** in the repo — not by installing ESPHome again.
+
+Example: `github://syssi/esphome-jbd-bms@main` — see [esphome-jbd-bms](https://github.com/syssi/esphome-jbd-bms).

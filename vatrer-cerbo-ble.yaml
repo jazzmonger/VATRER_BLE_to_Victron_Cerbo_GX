@@ -1,0 +1,536 @@
+# Vatrer (JBD) BLE -> MQTT bridge for Victron Cerbo GX
+# Docs: docs/CERBO-VATRER-SETUP.md  |  Flash: ./scripts/esphome-flash.sh upload
+#
+# Cerbo driver: mr-manuel venus-os_dbus-mqtt-battery (PackageManager)
+#   config.ini [MQTT] topic = vatrer/battery  (exact topic — no leading "/")
+#   timeout: raise to 120 if BLE poll cycle exceeds 60s
+#   Minimum JSON: {"Dc":{"Power":0,"Voltage":52.7},"Soc":63}
+# Also publishes per-BMS ESPHome topics under ${mqtt_prefix}/sensor|binary_sensor/... for debug.
+#
+# JBD BLE: https://github.com/syssi/esphome-jbd-bms (requires ESPHome 2025.11+)
+
+substitutions:
+  mqtt_prefix: vatrer/battery
+  # 2x 12 V (4S LiFePO4) packs in parallel on one 12 V bank
+  cells_per_pack: "4"
+  installed_capacity_ah: "600"
+
+esphome:
+  name: vatrer-cerbo-ble
+  on_boot:
+    priority: -100
+    then:
+      - wait_until:
+          wifi.connected:
+      - delay: 10s
+      - logger.log: "WiFi up - starting sequential BMS polling"
+      - script.execute: poll_all_bms
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_ACL_CONNECTIONS: "4"
+      CONFIG_BT_GATTC_CONNECT_RETRY_COUNT: "3"
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+      CONFIG_BT_BLE_50_FEATURES_SUPPORTED: "n"
+      CONFIG_BT_BLE_42_FEATURES_SUPPORTED: "y"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_pass
+  power_save_mode: NONE
+  ap:
+    ssid: "Vatrer-Cerbo-BLE-Fallback"
+    password: !secret wifi_pass
+
+captive_portal:
+
+mqtt:
+  id: mqtt_hub
+  broker: !secret mqtt_broker
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  topic_prefix: ${mqtt_prefix}
+  discovery: false
+  birth_message:
+    topic: ${mqtt_prefix}/status
+    payload: online
+  will_message:
+    topic: ${mqtt_prefix}/status
+    payload: offline
+  on_connect:
+    - script.execute: publish_cerbo_battery_json
+
+logger:
+  level: INFO
+  hardware_uart: USB_SERIAL_JTAG
+  logs:
+    jbd_bms_ble: WARN
+    cerbo: INFO
+
+# Native API: OTA flash + wireless logs (not Home Assistant; mqtt.discovery stays false)
+api:
+  reboot_timeout: 0s
+
+ota:
+  platform: esphome
+
+external_components:
+  - source: github://syssi/esphome-jbd-bms@main
+    refresh: 1d
+    components: [jbd_bms_ble]
+
+esp32_ble:
+  max_connections: 3
+
+esp32_ble_tracker:
+  id: ble_tracker
+  scan_parameters:
+    interval: 320ms
+    window: 300ms
+    active: true
+    continuous: true
+
+ble_client:
+  - mac_address: "A5:C2:39:52:70:FB"
+    id: ble_bms1
+    auto_connect: false
+  - mac_address: "A5:C2:39:52:70:F4"
+    id: ble_bms2
+    auto_connect: false
+
+jbd_bms_ble:
+  - id: bms1
+    ble_client_id: ble_bms1
+    update_interval: never
+  - id: bms2
+    ble_client_id: ble_bms2
+    update_interval: never
+
+sensor:
+
+  # Vatrer BMS 1 (dbus-mqtt-battery: bms1)
+  - platform: jbd_bms_ble
+    jbd_bms_ble_id: bms1
+    total_voltage:
+      name: "voltage_bms1"
+      id: sensor_bms1_voltage
+      on_raw_value:
+        then:
+          - lambda: 'id(bms1_data_ready) = true;'
+          - script.execute: refresh_pack_voltage_from_cells
+          - script.execute: update_chain_totals
+          - script.execute: publish_cerbo_battery_json
+    current:
+      name: "current_bms1"
+      id: sensor_bms1_current
+    power:
+      name: "power_bms1"
+      id: sensor_bms1_power
+    state_of_charge:
+      name: "soc_bms1"
+      id: sensor_bms1_soc
+    capacity_remaining:
+      name: "capacity_remaining_bms1"
+      id: sensor_bms1_capacity
+    cell_voltage_1:
+      name: "voltage_cell1_bms1"
+      id: cell_bms1_1
+    cell_voltage_2:
+      name: "voltage_cell2_bms1"
+      id: cell_bms1_2
+    cell_voltage_3:
+      name: "voltage_cell3_bms1"
+      id: cell_bms1_3
+    cell_voltage_4:
+      name: "voltage_cell4_bms1"
+      id: cell_bms1_4
+    cell_voltage_5:
+      name: "voltage_cell5_bms1"
+      id: cell_bms1_5
+    cell_voltage_6:
+      name: "voltage_cell6_bms1"
+      id: cell_bms1_6
+    cell_voltage_7:
+      name: "voltage_cell7_bms1"
+      id: cell_bms1_7
+    cell_voltage_8:
+      name: "voltage_cell8_bms1"
+      id: cell_bms1_8
+    cell_voltage_9:
+      name: "voltage_cell9_bms1"
+      id: cell_bms1_9
+    cell_voltage_10:
+      name: "voltage_cell10_bms1"
+      id: cell_bms1_10
+    cell_voltage_11:
+      name: "voltage_cell11_bms1"
+      id: cell_bms1_11
+    cell_voltage_12:
+      name: "voltage_cell12_bms1"
+      id: cell_bms1_12
+    cell_voltage_13:
+      name: "voltage_cell13_bms1"
+      id: cell_bms1_13
+    cell_voltage_14:
+      name: "voltage_cell14_bms1"
+      id: cell_bms1_14
+    cell_voltage_15:
+      name: "voltage_cell15_bms1"
+      id: cell_bms1_15
+    cell_voltage_16:
+      name: "voltage_cell16_bms1"
+      id: cell_bms1_16
+
+  # Vatrer BMS 2 (dbus-mqtt-battery: bms2)
+  - platform: jbd_bms_ble
+    jbd_bms_ble_id: bms2
+    total_voltage:
+      name: "voltage_bms2"
+      id: sensor_bms2_voltage
+      on_raw_value:
+        then:
+          - lambda: 'id(bms2_data_ready) = true;'
+          - script.execute: refresh_pack_voltage_from_cells
+          - script.execute: update_chain_totals
+          - script.execute: publish_cerbo_battery_json
+    current:
+      name: "current_bms2"
+      id: sensor_bms2_current
+    power:
+      name: "power_bms2"
+      id: sensor_bms2_power
+    state_of_charge:
+      name: "soc_bms2"
+      id: sensor_bms2_soc
+    capacity_remaining:
+      name: "capacity_remaining_bms2"
+      id: sensor_bms2_capacity
+    cell_voltage_1:
+      name: "voltage_cell1_bms2"
+      id: cell_bms2_1
+    cell_voltage_2:
+      name: "voltage_cell2_bms2"
+      id: cell_bms2_2
+    cell_voltage_3:
+      name: "voltage_cell3_bms2"
+      id: cell_bms2_3
+    cell_voltage_4:
+      name: "voltage_cell4_bms2"
+      id: cell_bms2_4
+    cell_voltage_5:
+      name: "voltage_cell5_bms2"
+      id: cell_bms2_5
+    cell_voltage_6:
+      name: "voltage_cell6_bms2"
+      id: cell_bms2_6
+    cell_voltage_7:
+      name: "voltage_cell7_bms2"
+      id: cell_bms2_7
+    cell_voltage_8:
+      name: "voltage_cell8_bms2"
+      id: cell_bms2_8
+    cell_voltage_9:
+      name: "voltage_cell9_bms2"
+      id: cell_bms2_9
+    cell_voltage_10:
+      name: "voltage_cell10_bms2"
+      id: cell_bms2_10
+    cell_voltage_11:
+      name: "voltage_cell11_bms2"
+      id: cell_bms2_11
+    cell_voltage_12:
+      name: "voltage_cell12_bms2"
+      id: cell_bms2_12
+    cell_voltage_13:
+      name: "voltage_cell13_bms2"
+      id: cell_bms2_13
+    cell_voltage_14:
+      name: "voltage_cell14_bms2"
+      id: cell_bms2_14
+    cell_voltage_15:
+      name: "voltage_cell15_bms2"
+      id: cell_bms2_15
+    cell_voltage_16:
+      name: "voltage_cell16_bms2"
+      id: cell_bms2_16
+
+  # 12 V packs: sum first ${cells_per_pack} cells per BMS (no 16S scaling)
+  - platform: template
+    name: "pack_voltage_bms1"
+    id: pack_voltage_bms1_sensor
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    update_interval: never
+    lambda: |-
+      if (id(pack_v_bms1) < 10.0f || id(pack_v_bms1) > 16.5f) return NAN;
+      return id(pack_v_bms1);
+
+  - platform: template
+    name: "pack_voltage_bms2"
+    id: pack_voltage_bms2_sensor
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    update_interval: never
+    lambda: |-
+      if (id(pack_v_bms2) < 10.0f || id(pack_v_bms2) > 16.5f) return NAN;
+      return id(pack_v_bms2);
+
+  - platform: template
+    name: "voltage_total"
+    id: chain_total_voltage_sensor
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    update_interval: never
+    lambda: |-
+      float sum = 0;
+      int packs = 0;
+      if (id(pack_v_bms1) >= 10.0f && id(pack_v_bms1) <= 16.5f) { sum += id(pack_v_bms1); packs++; }
+      if (id(pack_v_bms2) >= 10.0f && id(pack_v_bms2) <= 16.5f) { sum += id(pack_v_bms2); packs++; }
+      if (packs == 0) return {};
+      return sum / packs;
+
+  - platform: template
+    name: "power_total"
+    id: chain_total_power_sensor
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    update_interval: never
+    lambda: |-
+      float total = 0;
+      if (id(sensor_bms1_power).has_state()) total += id(sensor_bms1_power).state;
+      if (id(sensor_bms2_power).has_state()) total += id(sensor_bms2_power).state;
+      return total;
+
+  - platform: template
+    name: "current_total"
+    id: chain_total_current_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: never
+    lambda: |-
+      float voltage = id(chain_total_voltage_sensor).state;
+      float power = id(chain_total_power_sensor).state;
+      if (voltage > 8) return power / voltage;
+      return {};
+
+  - platform: template
+    name: "soc_total"
+    id: chain_min_soc_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: never
+    lambda: |-
+      std::vector<float> socs;
+      if (id(sensor_bms1_soc).has_state()) socs.push_back(id(sensor_bms1_soc).state);
+      if (id(sensor_bms2_soc).has_state()) socs.push_back(id(sensor_bms2_soc).state);
+      if (socs.empty()) return NAN;
+      std::sort(socs.begin(), socs.end());
+      return socs[0];
+
+  - platform: template
+    name: "capacity_total"
+    id: chain_capacity_remaining_sensor
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 1
+    update_interval: never
+    lambda: |-
+      float total = 0;
+      int count = 0;
+      if (id(sensor_bms1_capacity).has_state() && id(sensor_bms1_capacity).state > 5) { total += id(sensor_bms1_capacity).state; count++; }
+      if (id(sensor_bms2_capacity).has_state() && id(sensor_bms2_capacity).state > 5) { total += id(sensor_bms2_capacity).state; count++; }
+      if (count == 0) return {};
+      return total;
+
+
+binary_sensor:
+  - platform: jbd_bms_ble
+    jbd_bms_ble_id: bms1
+    charging:
+      name: "charging_bms1"
+    discharging:
+      name: "discharging_bms1"
+    online_status:
+      name: "online_bms1"
+
+  - platform: jbd_bms_ble
+    jbd_bms_ble_id: bms2
+    charging:
+      name: "charging_bms2"
+    discharging:
+      name: "discharging_bms2"
+    online_status:
+      name: "online_bms2"
+
+globals:
+  - id: bms1_data_ready
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: bms2_data_ready
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: pack_v_bms1
+    type: float
+    restore_value: no
+    initial_value: '0'
+  - id: pack_v_bms2
+    type: float
+    restore_value: no
+    initial_value: '0'
+
+script:
+  - id: refresh_pack_voltage_from_cells
+    then:
+      - lambda: |-
+          const int n_cells = atoi("${cells_per_pack}");
+          auto sum_cells = [n_cells](esphome::sensor::Sensor *cells[16]) -> float {
+            float s = 0;
+            int c = 0;
+            for (int i = 0; i < n_cells && i < 16; i++) {
+              if (cells[i] == nullptr || !cells[i]->has_state()) continue;
+              float v = cells[i]->state;
+              if (v < 0.5f || v > 5.0f) continue;
+              s += v;
+              c++;
+            }
+            if (c < 2) return 0.0f;
+            return s;
+          };
+          auto fallback_pack_v = [](esphome::sensor::Sensor *pack) -> float {
+            if (pack == nullptr || !pack->has_state()) return 0.0f;
+            float v = pack->state;
+            if (v >= 10.0f && v <= 16.5f) return v;
+            return 0.0f;
+          };
+          esphome::sensor::Sensor *b1[16] = {
+            id(cell_bms1_1), id(cell_bms1_2), id(cell_bms1_3), id(cell_bms1_4),
+            id(cell_bms1_5), id(cell_bms1_6), id(cell_bms1_7), id(cell_bms1_8),
+            id(cell_bms1_9), id(cell_bms1_10), id(cell_bms1_11), id(cell_bms1_12),
+            id(cell_bms1_13), id(cell_bms1_14), id(cell_bms1_15), id(cell_bms1_16),
+          };
+          esphome::sensor::Sensor *b2[16] = {
+            id(cell_bms2_1), id(cell_bms2_2), id(cell_bms2_3), id(cell_bms2_4),
+            id(cell_bms2_5), id(cell_bms2_6), id(cell_bms2_7), id(cell_bms2_8),
+            id(cell_bms2_9), id(cell_bms2_10), id(cell_bms2_11), id(cell_bms2_12),
+            id(cell_bms2_13), id(cell_bms2_14), id(cell_bms2_15), id(cell_bms2_16),
+          };
+          float v1 = sum_cells(b1);
+          if (v1 < 10.0f) v1 = fallback_pack_v(id(sensor_bms1_voltage));
+          if (v1 >= 10.0f && v1 <= 16.5f) id(pack_v_bms1) = v1;
+          float v2 = sum_cells(b2);
+          if (v2 < 10.0f) v2 = fallback_pack_v(id(sensor_bms2_voltage));
+          if (v2 >= 10.0f && v2 <= 16.5f) id(pack_v_bms2) = v2;
+
+  - id: update_chain_totals
+    then:
+      - script.execute: refresh_pack_voltage_from_cells
+      - lambda: |-
+          id(pack_voltage_bms1_sensor).update();
+          id(pack_voltage_bms2_sensor).update();
+          id(chain_total_voltage_sensor).update();
+          id(chain_total_power_sensor).update();
+          id(chain_total_current_sensor).update();
+          id(chain_min_soc_sensor).update();
+          id(chain_capacity_remaining_sensor).update();
+
+  - id: publish_cerbo_battery_json
+    then:
+      - mqtt.publish:
+          id: mqtt_hub
+          topic: ${mqtt_prefix}
+          retain: true
+          payload: !lambda |-
+            auto bank_voltage = []() -> float {
+              float v = 0;
+              if (id(chain_total_voltage_sensor).has_state())
+                v = id(chain_total_voltage_sensor).state;
+              if (v >= 10.0f && v <= 16.5f) return v;
+              if (id(pack_v_bms1) >= 10.0f && id(pack_v_bms1) <= 16.5f) {
+                if (id(pack_v_bms2) >= 10.0f && id(pack_v_bms2) <= 16.5f)
+                  return (id(pack_v_bms1) + id(pack_v_bms2)) / 2.0f;
+                return id(pack_v_bms1);
+              }
+              if (id(pack_v_bms2) >= 10.0f && id(pack_v_bms2) <= 16.5f) return id(pack_v_bms2);
+              if (id(sensor_bms1_voltage).has_state()) {
+                v = id(sensor_bms1_voltage).state;
+                if (v >= 10.0f && v <= 16.5f) return v;
+              }
+              if (id(sensor_bms2_voltage).has_state()) {
+                v = id(sensor_bms2_voltage).state;
+                if (v >= 10.0f && v <= 16.5f) return v;
+              }
+              return 0.0f;
+            };
+            float voltage = bank_voltage();
+            if (voltage < 10.0f) return std::string("");
+            float power = 0.0f;
+            if (id(chain_total_power_sensor).has_state()) power = id(chain_total_power_sensor).state;
+            else {
+              if (id(sensor_bms1_power).has_state()) power += id(sensor_bms1_power).state;
+              if (id(sensor_bms2_power).has_state()) power += id(sensor_bms2_power).state;
+            }
+            float current = (voltage > 0.5f) ? power / voltage : 0.0f;
+            float soc = 0.0f;
+            if (id(chain_min_soc_sensor).has_state()) soc = id(chain_min_soc_sensor).state;
+            else if (id(sensor_bms1_soc).has_state()) soc = id(sensor_bms1_soc).state;
+            float capacity = 0.0f;
+            if (id(chain_capacity_remaining_sensor).has_state()) capacity = id(chain_capacity_remaining_sensor).state;
+            float installed = atof("${installed_capacity_ah}");
+            char buf[320];
+            snprintf(buf, sizeof(buf),
+              "{\"Dc\":{\"Voltage\":%.2f,\"Power\":%.1f,\"Current\":%.2f},\"Soc\":%.0f,"
+              "\"Capacity\":%.1f,\"InstalledCapacity\":%.1f}",
+              voltage, power, current, soc, capacity, installed);
+            ESP_LOGI("cerbo", "MQTT JSON V=%.2f P=%.1f Soc=%.0f", voltage, power, soc);
+            return std::string(buf);
+
+  - id: poll_all_bms
+    mode: restart
+    then:
+      # BMS 1 — one BLE connection at a time (avoids status 133 / 0x3e)
+      - lambda: 'id(bms1_data_ready) = false;'
+      - ble_client.connect: ble_bms1
+      - delay: 5s
+      - lambda: 'id(bms1).update();'
+      - wait_until:
+          condition:
+            lambda: 'return id(bms1_data_ready);'
+          timeout: 8s
+      - lambda: 'if (!id(bms1_data_ready)) ESP_LOGW("poll", "B1: Timeout");'
+      - script.execute: refresh_pack_voltage_from_cells
+      - ble_client.disconnect: ble_bms1
+      - script.execute: update_chain_totals
+      - script.execute: publish_cerbo_battery_json
+      - delay: 10s
+
+      # BMS 2 — extra settle time after BMS1 avoids ESP_GATTC status 133
+      - lambda: 'id(bms2_data_ready) = false;'
+      - ble_client.connect: ble_bms2
+      - delay: 8s
+      - lambda: 'id(bms2).update();'
+      - wait_until:
+          condition:
+            lambda: 'return id(bms2_data_ready);'
+          timeout: 12s
+      - lambda: 'if (!id(bms2_data_ready)) ESP_LOGW("poll", "B2: Timeout");'
+      - script.execute: refresh_pack_voltage_from_cells
+      - ble_client.disconnect: ble_bms2
+      - delay: 5s
+
+      - script.execute: update_chain_totals
+      - script.execute: publish_cerbo_battery_json
+      - delay: 5s
+      - script.execute: poll_all_bms
+
+interval:
+  - interval: 15s
+    then:
+      - script.execute: update_chain_totals
+      - script.execute: publish_cerbo_battery_json
+
