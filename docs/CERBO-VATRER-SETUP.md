@@ -1,6 +1,6 @@
 # Vatrer BLE → Cerbo GX (mr-manuel MQTT battery)
 
-ESP32-S3 reads two JBD (Vatrer) BMS packs over BLE and publishes data to the Cerbo’s MQTT broker. The Cerbo runs **[mr-manuel venus-os_dbus-mqtt-battery](https://github.com/mr-manuel/venus-os_dbus-mqtt-battery)** (PackageManager), **not** the separate [victron-venus/dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) project (different topic layout).
+ESP32-C6 reads two JBD (Vatrer) BMS packs over BLE and publishes data to the Cerbo’s MQTT broker. The Cerbo runs **[mr-manuel venus-os_dbus-mqtt-battery](https://github.com/mr-manuel/venus-os_dbus-mqtt-battery)** (PackageManager), **not** the separate [victron-venus/dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) project (different topic layout).
 
 ## System layout
 
@@ -153,7 +153,16 @@ This firmware uses a **plaintext** native API (no `api.encryption` block). If yo
 | 1 | `A5:C2:39:52:70:FB` |
 | 2 | `A5:C2:39:52:70:F4` |
 
-Sequential connect → read → disconnect (one BMS at a time). Status **133** on the second pack: longer delays, range, close phone app on that BMS.
+Sequential **connect → read → disconnect** (one BMS at a time). `auto_connect: false` so the **Vatrer phone app** can use the packs between polls (JBD allows only one BLE central).
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `bms_poll_interval_min` | `5` | Full two-pack cycle every N minutes |
+| `ble_phone_pause_min` | `15` | Web UI button pauses ESP BLE polling |
+
+**Web UI** (`http://<esp32_ip>/`): button **pause_ble_polling_15min** — disconnects ESP and skips polls for 15 minutes. Binary **ble_polling_paused** shows pause state.
+
+Status **133** on the second pack: longer `ble_between_packs_s`, range, close phone app during the poll window only.
 
 JBD component: [syssi/esphome-jbd-bms](https://github.com/syssi/esphome-jbd-bms) `@main`.
 
@@ -163,6 +172,7 @@ JBD component: [syssi/esphome-jbd-bms](https://github.com/syssi/esphome-jbd-bms)
 
 | Symptom | Likely cause | Action |
 |---------|----------------|--------|
+| Vatrer app won’t connect | ESP holding BLE (`auto_connect` / no disconnect) | OTA current firmware; use **pause_ble_polling_15min** or wait between 5 min cycles |
 | Driver timeout, no data | Wrong topic (`/vatrer/battery` vs `vatrer/battery`) or no JSON | Fix topic; check `mosquitto_sub`; wait for BLE poll / `cerbo` log line |
 | Tile shows **~107 V** | Old **retained** JSON from 16S-series math | OTA current firmware; `restart.sh`; confirm retained message ~13 V |
 | ESP shows **13.5 V**, tile wrong | Retained MQTT not updated yet | Publish on each BMS read + 15 s interval; restart driver |

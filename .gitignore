@@ -4,4 +4,5 @@
 /.esphome/
 /secrets.yaml
 /.venv/
+/esphome-build-c6/
 .DS_Store

@@ -7,7 +7,7 @@ cd "$ROOT"
 
 CONFIG="${ESPHOME_CONFIG:-vatrer-cerbo-ble.yaml}"
 DEVICE="${ESPHOME_DEVICE:-/dev/cu.usbmodem101}"
-export ESPHOME_BUILD_PATH="${ESPHOME_BUILD_PATH:-$HOME/ESPHome_Projects/cerbo-vatrer-esphome-build}"
+export ESPHOME_BUILD_PATH="${ESPHOME_BUILD_PATH:-$ROOT/esphome-build-c6}"
 export PLATFORMIO_BUILD_CACHE_DIR="${PLATFORMIO_BUILD_CACHE_DIR:-$HOME/.cache/platformio-esphome}"
 mkdir -p "$ESPHOME_BUILD_PATH" "$PLATFORMIO_BUILD_CACHE_DIR"
 

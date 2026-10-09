@@ -8,12 +8,22 @@
 # Also publishes per-BMS ESPHome topics under ${mqtt_prefix}/sensor|binary_sensor/... for debug.
 #
 # JBD BLE: https://github.com/syssi/esphome-jbd-bms (requires ESPHome 2025.11+)
+# Hardware: ESP32-C6-DevKitC-1 (USB-JTAG serial)
 
 substitutions:
   mqtt_prefix: vatrer/battery
   # 2x 12 V (4S LiFePO4) packs in parallel on one 12 V bank
   cells_per_pack: "4"
   installed_capacity_ah: "600"
+  # Full two-pack BLE cycle interval (phone can use Vatrer app between cycles)
+  bms_poll_interval_min: "5"
+  ble_between_packs_s: "10"
+  ble_post_connect_delay_bms1_s: "5"
+  ble_post_connect_delay_bms2_s: "8"
+  ble_data_wait_bms1_s: "12"
+  ble_data_wait_bms2_s: "12"
+  ble_pre_connect_settle_s: "3"
+  ble_phone_pause_min: "15"
 
 esphome:
   name: vatrer-cerbo-ble
@@ -22,13 +32,18 @@ esphome:
     then:
       - wait_until:
           wifi.connected:
+      - lambda: |-
+          char ip_buf[40];
+          id(wifi_sta).wifi_sta_ip_addresses()[0].str_to(ip_buf);
+          ESP_LOGI("wifi_ip", "Boot: WiFi up — IP=%s (set secrets esp32_ip for OTA logs)", ip_buf);
       - delay: 10s
-      - logger.log: "WiFi up - starting sequential BMS polling"
-      - script.execute: poll_all_bms
+      - logger.log: "WiFi up - sequential BLE poll (connect/disconnect, auto_connect off)"
+      - delay: 60s
+      - script.execute: poll_bms_cycle
 
 esp32:
-  board: esp32-s3-devkitc-1
-  variant: esp32s3
+  board: esp32-c6-devkitc-1
+  variant: esp32c6
   framework:
     type: esp-idf
     sdkconfig_options:
@@ -39,14 +54,38 @@ esp32:
       CONFIG_BT_BLE_42_FEATURES_SUPPORTED: "y"
 
 wifi:
+  id: wifi_sta
   ssid: !secret wifi_ssid
   password: !secret wifi_pass
+  use_address: !secret esp32_ip
+  manual_ip:
+    static_ip: !secret esp32_ip
+    gateway: !secret wifi_gateway
+    subnet: 255.255.255.0
   power_save_mode: NONE
+  on_connect:
+    - lambda: |-
+        char ip_buf[40];
+        char ssid_buf[33];
+        id(wifi_sta).wifi_sta_ip_addresses()[0].str_to(ip_buf);
+        id(wifi_sta).wifi_ssid_to(ssid_buf);
+        ESP_LOGI("wifi_ip", "Connected to AP — SSID=%s  IP=%s", ssid_buf, ip_buf);
   ap:
     ssid: "Vatrer-Cerbo-BLE-Fallback"
     password: !secret wifi_pass
 
 captive_portal:
+
+# Browser UI at http://<esp32_ip>/ — entities + live log stream (Log tab)
+web_server:
+  port: 80
+  version: 3
+  log: true
+  include_internal: true
+  auth:
+    type: digest
+    username: !secret web_server_username
+    password: !secret web_server_password
 
 mqtt:
   id: mqtt_hub
@@ -70,7 +109,14 @@ logger:
   hardware_uart: USB_SERIAL_JTAG
   logs:
     jbd_bms_ble: WARN
+    esp32_ble: INFO
+    esp32_ble_client: INFO
+    ble_client: INFO
     cerbo: INFO
+    poll: INFO
+    wifi_ip: INFO
+    wifi: INFO
+    wifi_esp32: INFO
 
 # Native API: OTA flash + wireless logs (not Home Assistant; mqtt.discovery stays false)
 api:
@@ -86,6 +132,7 @@ external_components:
 
 esp32_ble:
   max_connections: 3
+  connection_timeout: 30s
 
 esp32_ble_tracker:
   id: ble_tracker
@@ -149,42 +196,6 @@ sensor:
     cell_voltage_4:
       name: "voltage_cell4_bms1"
       id: cell_bms1_4
-    cell_voltage_5:
-      name: "voltage_cell5_bms1"
-      id: cell_bms1_5
-    cell_voltage_6:
-      name: "voltage_cell6_bms1"
-      id: cell_bms1_6
-    cell_voltage_7:
-      name: "voltage_cell7_bms1"
-      id: cell_bms1_7
-    cell_voltage_8:
-      name: "voltage_cell8_bms1"
-      id: cell_bms1_8
-    cell_voltage_9:
-      name: "voltage_cell9_bms1"
-      id: cell_bms1_9
-    cell_voltage_10:
-      name: "voltage_cell10_bms1"
-      id: cell_bms1_10
-    cell_voltage_11:
-      name: "voltage_cell11_bms1"
-      id: cell_bms1_11
-    cell_voltage_12:
-      name: "voltage_cell12_bms1"
-      id: cell_bms1_12
-    cell_voltage_13:
-      name: "voltage_cell13_bms1"
-      id: cell_bms1_13
-    cell_voltage_14:
-      name: "voltage_cell14_bms1"
-      id: cell_bms1_14
-    cell_voltage_15:
-      name: "voltage_cell15_bms1"
-      id: cell_bms1_15
-    cell_voltage_16:
-      name: "voltage_cell16_bms1"
-      id: cell_bms1_16
 
   # Vatrer BMS 2 (dbus-mqtt-battery: bms2)
   - platform: jbd_bms_ble
@@ -222,42 +233,6 @@ sensor:
     cell_voltage_4:
       name: "voltage_cell4_bms2"
       id: cell_bms2_4
-    cell_voltage_5:
-      name: "voltage_cell5_bms2"
-      id: cell_bms2_5
-    cell_voltage_6:
-      name: "voltage_cell6_bms2"
-      id: cell_bms2_6
-    cell_voltage_7:
-      name: "voltage_cell7_bms2"
-      id: cell_bms2_7
-    cell_voltage_8:
-      name: "voltage_cell8_bms2"
-      id: cell_bms2_8
-    cell_voltage_9:
-      name: "voltage_cell9_bms2"
-      id: cell_bms2_9
-    cell_voltage_10:
-      name: "voltage_cell10_bms2"
-      id: cell_bms2_10
-    cell_voltage_11:
-      name: "voltage_cell11_bms2"
-      id: cell_bms2_11
-    cell_voltage_12:
-      name: "voltage_cell12_bms2"
-      id: cell_bms2_12
-    cell_voltage_13:
-      name: "voltage_cell13_bms2"
-      id: cell_bms2_13
-    cell_voltage_14:
-      name: "voltage_cell14_bms2"
-      id: cell_bms2_14
-    cell_voltage_15:
-      name: "voltage_cell15_bms2"
-      id: cell_bms2_15
-    cell_voltage_16:
-      name: "voltage_cell16_bms2"
-      id: cell_bms2_16
 
   # 12 V packs: sum first ${cells_per_pack} cells per BMS (no 16S scaling)
   - platform: template
@@ -318,19 +293,20 @@ sensor:
       if (voltage > 8) return power / voltage;
       return {};
 
+  # Parallel packs: average SOC (matches Vatrer app); per-pack soc_bms1/2 still exposed
   - platform: template
     name: "soc_total"
-    id: chain_min_soc_sensor
+    id: chain_avg_soc_sensor
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: never
     lambda: |-
-      std::vector<float> socs;
-      if (id(sensor_bms1_soc).has_state()) socs.push_back(id(sensor_bms1_soc).state);
-      if (id(sensor_bms2_soc).has_state()) socs.push_back(id(sensor_bms2_soc).state);
-      if (socs.empty()) return NAN;
-      std::sort(socs.begin(), socs.end());
-      return socs[0];
+      float sum = 0;
+      int count = 0;
+      if (id(sensor_bms1_soc).has_state()) { sum += id(sensor_bms1_soc).state; count++; }
+      if (id(sensor_bms2_soc).has_state()) { sum += id(sensor_bms2_soc).state; count++; }
+      if (count == 0) return NAN;
+      return sum / count;
 
   - platform: template
     name: "capacity_total"
@@ -366,6 +342,12 @@ binary_sensor:
     online_status:
       name: "online_bms2"
 
+  - platform: template
+    name: "ble_polling_paused"
+    id: ble_polling_paused_sensor
+    lambda: |-
+      return millis() < id(ble_pause_until_ms);
+
 globals:
   - id: bms1_data_ready
     type: bool
@@ -383,16 +365,81 @@ globals:
     type: float
     restore_value: no
     initial_value: '0'
+  - id: ble_pause_until_ms
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+
+button:
+  - platform: template
+    name: "pause_ble_polling_15min"
+    id: btn_pause_ble_15min
+    on_press:
+      - lambda: |-
+          id(ble_pause_until_ms) = millis() + (unsigned long) (atoi("${ble_phone_pause_min}") * 60 * 1000);
+          ESP_LOGI("poll", "BLE polling paused %s min — Vatrer app can connect", "${ble_phone_pause_min}");
+      - ble_client.disconnect: ble_bms1
+      - ble_client.disconnect: ble_bms2
 
 script:
+  - id: poll_bms1_pack
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return millis() >= id(ble_pause_until_ms);'
+          then:
+            - lambda: 'id(bms1_data_ready) = false;'
+            - ble_client.disconnect: ble_bms1
+            - delay: ${ble_pre_connect_settle_s}s
+            - lambda: 'ESP_LOGI("poll", "B1: connect");'
+            - ble_client.connect: ble_bms1
+            - delay: ${ble_post_connect_delay_bms1_s}s
+            - lambda: 'id(bms1).update();'
+            - wait_until:
+                condition:
+                  lambda: 'return id(bms1_data_ready);'
+                timeout: ${ble_data_wait_bms1_s}s
+            - lambda: |-
+                if (!id(bms1_data_ready))
+                  ESP_LOGW("poll", "B1: data timeout");
+            - script.execute: refresh_pack_voltage_from_cells
+            - ble_client.disconnect: ble_bms1
+            - delay: ${ble_pre_connect_settle_s}s
+
+  - id: poll_bms2_pack
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return millis() >= id(ble_pause_until_ms);'
+          then:
+            - lambda: 'id(bms2_data_ready) = false;'
+            - ble_client.disconnect: ble_bms2
+            - delay: ${ble_pre_connect_settle_s}s
+            - lambda: 'ESP_LOGI("poll", "B2: connect");'
+            - ble_client.connect: ble_bms2
+            - delay: ${ble_post_connect_delay_bms2_s}s
+            - lambda: 'id(bms2).update();'
+            - wait_until:
+                condition:
+                  lambda: 'return id(bms2_data_ready);'
+                timeout: ${ble_data_wait_bms2_s}s
+            - lambda: |-
+                if (!id(bms2_data_ready))
+                  ESP_LOGW("poll", "B2: data timeout");
+            - script.execute: refresh_pack_voltage_from_cells
+            - ble_client.disconnect: ble_bms2
+            - delay: ${ble_pre_connect_settle_s}s
+
   - id: refresh_pack_voltage_from_cells
     then:
       - lambda: |-
           const int n_cells = atoi("${cells_per_pack}");
-          auto sum_cells = [n_cells](esphome::sensor::Sensor *cells[16]) -> float {
+          auto sum_cells = [n_cells](esphome::sensor::Sensor *cells[4]) -> float {
             float s = 0;
             int c = 0;
-            for (int i = 0; i < n_cells && i < 16; i++) {
+            for (int i = 0; i < n_cells && i < 4; i++) {
               if (cells[i] == nullptr || !cells[i]->has_state()) continue;
               float v = cells[i]->state;
               if (v < 0.5f || v > 5.0f) continue;
@@ -408,17 +455,11 @@ script:
             if (v >= 10.0f && v <= 16.5f) return v;
             return 0.0f;
           };
-          esphome::sensor::Sensor *b1[16] = {
+          esphome::sensor::Sensor *b1[4] = {
             id(cell_bms1_1), id(cell_bms1_2), id(cell_bms1_3), id(cell_bms1_4),
-            id(cell_bms1_5), id(cell_bms1_6), id(cell_bms1_7), id(cell_bms1_8),
-            id(cell_bms1_9), id(cell_bms1_10), id(cell_bms1_11), id(cell_bms1_12),
-            id(cell_bms1_13), id(cell_bms1_14), id(cell_bms1_15), id(cell_bms1_16),
           };
-          esphome::sensor::Sensor *b2[16] = {
+          esphome::sensor::Sensor *b2[4] = {
             id(cell_bms2_1), id(cell_bms2_2), id(cell_bms2_3), id(cell_bms2_4),
-            id(cell_bms2_5), id(cell_bms2_6), id(cell_bms2_7), id(cell_bms2_8),
-            id(cell_bms2_9), id(cell_bms2_10), id(cell_bms2_11), id(cell_bms2_12),
-            id(cell_bms2_13), id(cell_bms2_14), id(cell_bms2_15), id(cell_bms2_16),
           };
           float v1 = sum_cells(b1);
           if (v1 < 10.0f) v1 = fallback_pack_v(id(sensor_bms1_voltage));
@@ -436,7 +477,7 @@ script:
           id(chain_total_voltage_sensor).update();
           id(chain_total_power_sensor).update();
           id(chain_total_current_sensor).update();
-          id(chain_min_soc_sensor).update();
+          id(chain_avg_soc_sensor).update();
           id(chain_capacity_remaining_sensor).update();
 
   - id: publish_cerbo_battery_json
@@ -477,7 +518,7 @@ script:
             }
             float current = (voltage > 0.5f) ? power / voltage : 0.0f;
             float soc = 0.0f;
-            if (id(chain_min_soc_sensor).has_state()) soc = id(chain_min_soc_sensor).state;
+            if (id(chain_avg_soc_sensor).has_state()) soc = id(chain_avg_soc_sensor).state;
             else if (id(sensor_bms1_soc).has_state()) soc = id(sensor_bms1_soc).state;
             float capacity = 0.0f;
             if (id(chain_capacity_remaining_sensor).has_state()) capacity = id(chain_capacity_remaining_sensor).state;
@@ -490,45 +531,33 @@ script:
             ESP_LOGI("cerbo", "MQTT JSON V=%.2f P=%.1f Soc=%.0f", voltage, power, soc);
             return std::string(buf);
 
-  - id: poll_all_bms
-    mode: restart
+  # Connect → read → disconnect per pack; auto_connect off so Vatrer app works between cycles.
+  - id: poll_bms_cycle
+    mode: single
     then:
-      # BMS 1 — one BLE connection at a time (avoids status 133 / 0x3e)
-      - lambda: 'id(bms1_data_ready) = false;'
-      - ble_client.connect: ble_bms1
-      - delay: 5s
-      - lambda: 'id(bms1).update();'
-      - wait_until:
+      - if:
           condition:
-            lambda: 'return id(bms1_data_ready);'
-          timeout: 8s
-      - lambda: 'if (!id(bms1_data_ready)) ESP_LOGW("poll", "B1: Timeout");'
-      - script.execute: refresh_pack_voltage_from_cells
-      - ble_client.disconnect: ble_bms1
-      - script.execute: update_chain_totals
-      - script.execute: publish_cerbo_battery_json
-      - delay: 10s
-
-      # BMS 2 — extra settle time after BMS1 avoids ESP_GATTC status 133
-      - lambda: 'id(bms2_data_ready) = false;'
-      - ble_client.connect: ble_bms2
-      - delay: 8s
-      - lambda: 'id(bms2).update();'
-      - wait_until:
-          condition:
-            lambda: 'return id(bms2_data_ready);'
-          timeout: 12s
-      - lambda: 'if (!id(bms2_data_ready)) ESP_LOGW("poll", "B2: Timeout");'
-      - script.execute: refresh_pack_voltage_from_cells
-      - ble_client.disconnect: ble_bms2
-      - delay: 5s
-
-      - script.execute: update_chain_totals
-      - script.execute: publish_cerbo_battery_json
-      - delay: 5s
-      - script.execute: poll_all_bms
+            lambda: 'return millis() < id(ble_pause_until_ms);'
+          then:
+            - lambda: 'ESP_LOGI("poll", "Cycle skipped (paused for phone app)");'
+          else:
+            - script.execute: poll_bms1_pack
+            - script.wait: poll_bms1_pack
+            - ble_client.disconnect: ble_bms1
+            - script.execute: update_chain_totals
+            - script.execute: publish_cerbo_battery_json
+            - delay: ${ble_between_packs_s}s
+            - script.execute: poll_bms2_pack
+            - script.wait: poll_bms2_pack
+            - ble_client.disconnect: ble_bms2
+            - script.execute: update_chain_totals
+            - script.execute: publish_cerbo_battery_json
+            - lambda: 'ESP_LOGI("poll", "Cycle done — BMS BLE released until next interval");'
 
 interval:
+  - interval: ${bms_poll_interval_min}min
+    then:
+      - script.execute: poll_bms_cycle
   - interval: 15s
     then:
       - script.execute: update_chain_totals
