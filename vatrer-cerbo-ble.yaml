@@ -16,7 +16,7 @@ substitutions:
   cells_per_pack: "4"
   installed_capacity_ah: "600"
   # Full two-pack BLE cycle interval (phone can use Vatrer app between cycles)
-  bms_poll_interval_min: "5"
+  bms_poll_interval_min: "2"
   ble_between_packs_s: "10"
   ble_post_connect_delay_bms1_s: "5"
   ble_post_connect_delay_bms2_s: "8"
