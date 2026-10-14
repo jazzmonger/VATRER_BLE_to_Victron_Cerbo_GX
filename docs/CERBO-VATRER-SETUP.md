@@ -103,6 +103,10 @@ Expect `"Voltage":13.xx` for a 12 V bank, not ~107 V.
 Negative “voltages” in a mislabeled view are often **watts** (discharge).
 
 ---
+## Required software on the Cerbo
+see https://github.com/mr-manuel/venus-os_dbus-mqtt-battery
+
+install that as is.
 
 ## ESP32: secrets and flash
 
